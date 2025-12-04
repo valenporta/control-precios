@@ -40,14 +40,31 @@ def _read_dataframe(file_path: Path) -> pd.DataFrame:
     A fallback to CSV/TSV is provided so bundled sample files can be simple tabular text
     while still using the .xls extension.
     """
+    errors = []
+
+    # Primary attempt: legacy .xls files
     try:
         return pd.read_excel(file_path, engine="xlrd")
-    except Exception:
-        # Fallback for plain-text tabular data
+    except Exception as exc:
+        errors.append(f"xlrd: {exc}")
+
+    # Secondary attempt: some providers ship modern Excel files with .xls extensions
+    try:
+        return pd.read_excel(file_path, engine="openpyxl")
+    except Exception as exc:
+        errors.append(f"openpyxl: {exc}")
+
+    # Fallback for plain-text tabular data with various encodings
+    for encoding in ("utf-8", "latin1"):
         try:
-            return pd.read_csv(file_path, sep="\t")
-        except Exception as exc:
-            raise ValueError(f"Unable to read file '{file_path.name}': {exc}") from exc
+            return pd.read_csv(file_path, sep="\t", encoding=encoding)
+        except UnicodeDecodeError as exc:
+            errors.append(f"csv-{encoding}: {exc}")
+        except Exception as exc:  # pragma: no cover - unexpected formats
+            errors.append(f"csv-{encoding}: {exc}")
+
+    joined_errors = "; ".join(errors)
+    raise ValueError(f"Unable to read file '{file_path.name}': {joined_errors}")
 
 
 def load_products(file_path: Path) -> Dict[str, ProductRow]:
